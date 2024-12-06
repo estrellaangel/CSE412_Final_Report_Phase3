@@ -175,3 +175,121 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error getting data: {e}")
             return None
+    
+    def save_visualization(self, name, figure):
+        """this save the plot to the the visualization db"""
+        try:
+            # Check if name exist
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    SELECT visualization_id 
+                    FROM visualizations 
+                    WHERE visualization_name = %s;
+                """, (name,))
+                existing = cur.fetchone()
+
+                if existing:
+                    # if exists ask  want to update
+                    if messagebox.askyesno("Name Exists", 
+                        f"A visualization named '{name}' already exists. Do you want to update it?"):
+                        # convert matplotlib figure to  bytes
+                        img_buffer = io.BytesIO()
+                        figure.savefig(img_buffer, format='png')
+                        img_bytes = img_buffer.getvalue()
+
+                        # update existing visualization
+                        cur.execute("""
+                            UPDATE visualizations 
+                            SET visualization_data = %s 
+                            WHERE visualization_name = %s
+                            RETURNING visualization_id;
+                        """, (img_bytes, name))
+                        viz_id = cur.fetchone()[0]
+                        self.conn.commit()
+                        return viz_id
+                    return None
+                else:
+                    # if doesn't exist create 
+                    # convert matplotlib figure to  bytes
+                    img_buffer = io.BytesIO()
+                    figure.savefig(img_buffer, format='png')
+                    img_bytes = img_buffer.getvalue()
+
+                    cur.execute("""
+                        INSERT INTO visualizations 
+                        (visualization_name, visualization_data) 
+                        VALUES (%s, %s)
+                        RETURNING visualization_id;
+                    """, (name, img_bytes))#store bytes
+                    viz_id = cur.fetchone()[0]
+                    self.conn.commit()
+                    return viz_id
+                
+        except Exception as e:
+            print(f"Error saving visualization: {e}")
+            # rollback db on error
+            if self.conn:
+                self.conn.rollback()
+            return None
+
+    def update_visualization_name(self, old_name, new_name):
+        """upadte name"""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE visualizations 
+                    SET visualization_name = %s 
+                    WHERE visualization_name = %s 
+                    RETURNING visualization_id;
+                """, (new_name, old_name))# use old and new name variables
+                updated_id = cur.fetchone()
+                self.conn.commit()
+                return updated_id[0] if updated_id else None
+        except Exception as e:
+            print(f"Error updating visualization name: {e}")
+            return None
+
+    def delete_visualization(self, name):
+        """delete visualization useing name"""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    DELETE FROM visualizations 
+                    WHERE visualization_name = %s
+                    RETURNING visualization_id;
+                """, (name,))#use the name of the visual
+                deleted_id = cur.fetchone()
+                self.conn.commit()
+                return deleted_id[0] if deleted_id else None
+        except Exception as e:
+            print(f"Error deleting visualization: {e}")
+            return None
+
+    def get_visualization_list(self):
+        """get list of visuals"""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    SELECT visualization_name 
+                    FROM visualizations 
+                    ORDER BY visualization_id;
+                """)
+                return cur.fetchall()
+        except Exception as e:
+            print(f"Error fetching visualizations: {e}")
+            return []
+
+    def get_visualization(self, name):
+        """get the plot image"""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    SELECT visualization_data 
+                    FROM visualizations 
+                    WHERE visualization_name = %s;
+                """, (name,))
+                result = cur.fetchone()
+                return result[0] if result else None
+        except Exception as e:
+            print(f"Error fetching visualization: {e}")
+            return None
